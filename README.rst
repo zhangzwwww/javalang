@@ -43,6 +43,16 @@ which simply means it should represent a complete, valid Java source file. Other
 methods in the ``javalang.parse`` module allow for some smaller code snippets to
 be parsed without providing an entire compilation unit.
 
+Modification
+^^^^^^^^^^^^
+
+Adding position information to token value.
+
+Returning a tuple instead of a string when asking for token value.
+
+.. code-block:: python
+    ('token-name', Position(Row 1, Column 1))
+
 Working with the syntax tree
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -156,3 +166,4 @@ exception,
 
 The ``javalang.parse`` module also provides convenience methods for parsing more
 common types of code snippets.
+

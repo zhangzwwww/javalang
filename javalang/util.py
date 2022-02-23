@@ -131,6 +131,9 @@ class LookAheadListIterator(object):
 
         return self.value
 
+    def previous(self):
+        return self.list[self.marker-1]
+
     def last(self):
         return self.value
 

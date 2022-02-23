@@ -134,7 +134,7 @@ class Parser(object):
 
             last = token
 
-        return last.value
+        return last.value, last.position
 
     def would_accept(self, *accepts):
         if len(accepts) == 0:
@@ -180,7 +180,7 @@ class Parser(object):
 
         for level in range(start_level, len(self.operator_precedence)):
             for j in range(1, len(parts) - 1, 2):
-                if parts[j] in self.operator_precedence[level]:
+                if parts[j][0] in self.operator_precedence[level]:
                     operand = self.build_binary_operation(parts[i:j], level + 1)
                     operator = parts[j]
                     i = j + 1
@@ -242,7 +242,12 @@ class Parser(object):
             if not self.try_accept('.'):
                 break
 
-        return '.'.join(qualified_identifier)
+        if len(qualified_identifier) == 0:
+            return ()
+        else:
+            return ('.'.join(list(map(lambda x: x[0], qualified_identifier))), qualified_identifier[0][1])
+
+        # return '.'.join(qualified_identifier)
 
     @parse_debug
     def parse_qualified_identifier_list(self):
@@ -278,14 +283,14 @@ class Parser(object):
 
         if self.try_accept('package'):
             self.tokens.pop_marker(False)
-            
+
             token = self.tokens.look()
             package_name = self.parse_qualified_identifier()
             package = tree.PackageDeclaration(annotations=package_annotations,
                                               name=package_name,
                                               documentation=javadoc)
             package._position = token.position
-            
+
             self.accept(';')
         else:
             self.tokens.pop_marker(True)
@@ -518,9 +523,10 @@ class Parser(object):
 
         if self.try_accept('?'):
             if self.tokens.look().value in ('extends', 'super'):
-                pattern_type = self.tokens.next().value
+                next_token = self.tokens.next()
+                pattern_type = (next_token.value, next_token.position)
             else:
-                return tree.TypeArgument(pattern_type='?')
+                return tree.TypeArgument(pattern_type=('?', self.tokens.previous().position))
 
         if self.would_accept(BasicType):
             base_type = self.parse_basic_type()
@@ -633,7 +639,7 @@ class Parser(object):
 
         next_token = self.tokens.look()
         if next_token:
-            javadoc = next_token.javadoc
+            javadoc = (next_token.javadoc, next_token.position)
 
         while True:
             token = self.tokens.look()
@@ -656,7 +662,7 @@ class Parser(object):
 
         while True:
             token = self.tokens.look()
-            
+
             annotation = self.parse_annotation()
             annotation._position = token.position
             annotations.append(annotation)
@@ -852,7 +858,7 @@ class Parser(object):
     @parse_debug
     def parse_method_or_field_rest(self):
         token = self.tokens.look()
-        
+
         if self.would_accept('('):
             return self.parse_method_declarator_rest()
         else:
@@ -1008,7 +1014,7 @@ class Parser(object):
             declaration = self.parse_interface_method_or_field_declaration()
 
         declaration._position = token.position
-        
+
         return declaration
 
     @parse_debug
@@ -1137,7 +1143,7 @@ class Parser(object):
 
         while True:
             modifiers, annotations = self.parse_variable_modifiers()
-            
+
             token = self.tokens.look()
             parameter_type = self.parse_type()
             varargs = False
@@ -1176,7 +1182,8 @@ class Parser(object):
         while True:
             token = self.tokens.look()
             if self.try_accept('final'):
-                modifiers.add('final')
+                # modifiers.add('final')
+                modifiers.add((token.value, token.position))
             elif self.is_annotation():
                 annotation = self.parse_annotation()
                 annotation._position = token.position
@@ -1775,7 +1782,9 @@ class Parser(object):
         assignment_expression = None
 
         if self.tokens.look().value in Operator.ASSIGNMENT:
-            assignment_type = self.tokens.next().value
+            next_token = self.tokens.next()
+            # assignment_type = self.tokens.next().value
+            assignment_type = (next_token.value, next_token.position)
             assignment_expression = self.parse_expression()
             return tree.Assignment(expressionl=expressionl,
                                    type=assignment_type,
@@ -1828,7 +1837,7 @@ class Parser(object):
         while token.value in Operator.INFIX or token.value == 'instanceof':
             if self.try_accept('instanceof'):
                 comparison_type = self.parse_type()
-                parts.extend(('instanceof', comparison_type))
+                parts.extend((('instanceof', token.position), comparison_type))
             else:
                 operator = self.parse_infix_operator()
                 expression = self.parse_expression_3()
@@ -1845,7 +1854,8 @@ class Parser(object):
     def parse_expression_3(self):
         prefix_operators = list()
         while self.tokens.look().value in Operator.PREFIX:
-            prefix_operators.append(self.tokens.next().value)
+            next_token = self.tokens.next()
+            prefix_operators.append((next_token.value, next_token.position))
 
         if self.would_accept('('):
             try:
@@ -1869,8 +1879,7 @@ class Parser(object):
 
         primary = self.parse_primary()
         primary.prefix_operators = prefix_operators
-        if getattr(primary, "selectors", None) is None:
-            primary.selectors = list()
+        primary.selectors = list()
         primary.postfix_operators = list()
 
         token = self.tokens.look()
@@ -1882,7 +1891,8 @@ class Parser(object):
             token = self.tokens.look()
 
         while token.value in Operator.POSTFIX:
-            primary.postfix_operators.append(self.tokens.next().value)
+            next_token = self.tokens.next()
+            primary.postfix_operators.append((next_token.value, next_token.position))
             token = self.tokens.look()
 
         return primary
@@ -1928,14 +1938,16 @@ class Parser(object):
     def parse_infix_operator(self):
         operator = self.accept(Operator)
 
-        if not operator in Operator.INFIX:
+        if not operator[0] in Operator.INFIX:
             self.illegal("Expected infix operator")
 
-        if operator == '>' and self.try_accept('>'):
-            operator = '>>'
+        if operator[0] == '>' and self.try_accept('>'):
+            position = operator[1]
+            operator = ('>>', position)
 
             if self.try_accept('>'):
-                operator = '>>>'
+                position = operator[1]
+                operator = ('>>>', position)
 
         return operator
 
@@ -2004,7 +2016,10 @@ class Parser(object):
                 identifier_suffix.type = tree.ReferenceType(name=qualified_identifier.pop())
 
             identifier_suffix._position = token.position
-            identifier_suffix.qualifier = '.'.join(qualified_identifier)
+            if len(qualified_identifier) == 0:
+                identifier_suffix.qualifier = []
+            else:
+                identifier_suffix.qualifier = ('.'.join(list(map(lambda x: x[0], qualified_identifier))), qualified_identifier[0][1])
 
             return identifier_suffix
 
@@ -2023,8 +2038,8 @@ class Parser(object):
 
     @parse_debug
     def parse_literal(self):
-        literal = self.accept(Literal)
-        return tree.Literal(value=literal)
+        literal, position = self.accept(Literal)
+        return tree.Literal(value=(literal, position))
 
     @parse_debug
     def parse_par_expression(self):
@@ -2219,7 +2234,7 @@ class Parser(object):
         type_arguments = self.parse_nonwildcard_type_arguments()
 
         token = self.tokens.look()
-        
+
         invocation = self.parse_explicit_generic_invocation_suffix()
         invocation._position = token.position
         invocation.type_arguments = type_arguments
@@ -2254,7 +2269,8 @@ class Parser(object):
 
             token = self.tokens.look()
             if isinstance(token, Identifier):
-                identifier = self.tokens.next().value
+                next_token = self.tokens.next()
+                identifier = (next_token.value, next_token.position)
                 arguments = None
 
                 if self.would_accept('('):
